@@ -1,0 +1,30 @@
+{
+  "name": "stock_system",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "db:reset": "supabase db reset",
+    "seed:local": "node scripts/seed-local.mjs",
+    "test": "vitest run",
+
+    "local:reset-seed-test": "supabase db reset && npm run seed:local && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/G3NZU/stock_system.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/G3NZU/stock_system/issues"
+  },
+  "homepage": "https://github.com/G3NZU/stock_system#readme",
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.98.0",
+    "dotenv": "^17.3.1",
+    "vitest": "^4.0.18"
+  }
+}
