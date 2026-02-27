@@ -7,8 +7,10 @@
     "db:reset": "supabase db reset",
     "seed:local": "node scripts/seed-local.mjs",
     "test": "vitest run",
-
-    "local:reset-seed-test": "supabase db reset && npm run seed:local && npm test"
+    "local:reset-seed-test": "supabase db reset && npm run seed:local && npm test",
+    "frontend:dev": "cd frontend && npm run dev",
+    "backend:dev": "cd backend && npm run dev",
+    "dev": "concurrently \"npm run frontend:dev\" \"npm run backend:dev\""
   },
   "repository": {
     "type": "git",
@@ -24,6 +26,7 @@
   "homepage": "https://github.com/G3NZU/stock_system#readme",
   "devDependencies": {
     "@supabase/supabase-js": "^2.98.0",
+    "concurrently": "^9.2.1",
     "dotenv": "^17.3.1",
     "vitest": "^4.0.18"
   }
