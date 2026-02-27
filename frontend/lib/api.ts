@@ -5,6 +5,6 @@ export async function apiFetch(path: string, options?: RequestInit) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`)
+  if (!res.ok) throw new Error(`API error ${res.status} at ${path}: ${await res.text()}`)
   return res.json()
 }
