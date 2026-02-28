@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import NavBar from '@/components/NavBar'
+import { AuthProvider } from '@/lib/AuthContext'
+import { ProtectedLayout } from '@/components/ProtectedLayout'
 
 export const metadata: Metadata = {
   title: 'Stock System',
-  description: 'Stock management testing UI',
+  description: 'Construction site inventory management',
 }
 
 export default function RootLayout({
@@ -13,10 +14,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="font-sans">
-        <NavBar />
-        <main className="p-6">{children}</main>
+        <AuthProvider>
+          <ProtectedLayout>{children}</ProtectedLayout>
+        </AuthProvider>
       </body>
     </html>
   )
