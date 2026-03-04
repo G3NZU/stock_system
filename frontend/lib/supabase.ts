@@ -22,5 +22,8 @@ export const supabase = {
       getSupabaseClient().auth.signInWithPassword(...args),
     signOut: (...args: Parameters<SupabaseClient['auth']['signOut']>) =>
       getSupabaseClient().auth.signOut(...args),
+    getSession: () => getSupabaseClient().auth.getSession(),
+    onAuthStateChange: (...args: Parameters<SupabaseClient['auth']['onAuthStateChange']>) =>
+      getSupabaseClient().auth.onAuthStateChange(...args),
   },
 }

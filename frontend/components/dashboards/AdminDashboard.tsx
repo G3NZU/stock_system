@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 interface Site {
   id: string
@@ -33,9 +34,11 @@ export default function AdminDashboard() {
   const fetchSites = async () => {
     try {
       setLoading(true)
-      const response = await fetch('http://localhost:4000/api/sites')
-      if (!response.ok) throw new Error('Failed to fetch sites')
-      const data = await response.json()
+      const { data, error: supabaseError } = await supabase
+        .from('sites')
+        .select('id, name, location')
+        .order('created_at', { ascending: false })
+      if (supabaseError) throw supabaseError
       setSites(data || [])
     } catch (err) {
       setError('Failed to load sites')
@@ -49,9 +52,12 @@ export default function AdminDashboard() {
     setSelectedSiteId(siteId)
     setSelectedProjectId(null)
     try {
-      const response = await fetch(`http://localhost:4000/api/projects?site_id=${siteId}`)
-      if (response.ok) {
-        const data = await response.json()
+      const { data, error: supabaseError } = await supabase
+        .from('projects')
+        .select('id, name, description, site_id')
+        .eq('site_id', siteId)
+        .order('created_at', { ascending: false })
+      if (!supabaseError) {
         setProjects(data || [])
       }
     } catch (err) {

@@ -1,60 +1,106 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { AuthSession, User, UserRole, saveSession, getSession, clearSession, isSessionValid } from './auth'
+import { User, UserRole } from './auth'
+import { supabase } from './supabase'
 
 interface AuthContextType {
-  session: AuthSession | null
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (email: string, password: string, role: UserRole) => Promise<void>
+  login: (email: string, password: string) => Promise<void>
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+const ROLE_PRIORITY: Record<string, number> = { admin: 4, warehouse: 3, manager: 2, buyer: 1 }
+
+function mapDbRole(dbRole: string): UserRole {
+  if (dbRole === 'warehouse') return 'warehouse_operator'
+  return dbRole as UserRole
+}
+
+async function fetchUserRole(userId: string): Promise<UserRole> {
+  const { data } = await supabase
+    .from('project_user_roles')
+    .select('roles(name)')
+    .eq('user_id', userId)
+
+  if (!data || data.length === 0) return 'buyer'
+
+  let highestRole = 'buyer'
+  for (const row of data) {
+    const rawRoles = (row as Record<string, unknown>).roles
+    let roleName: string | undefined
+    if (Array.isArray(rawRoles)) {
+      roleName = (rawRoles[0] as { name?: string } | undefined)?.name
+    } else if (rawRoles && typeof rawRoles === 'object') {
+      roleName = (rawRoles as { name?: string }).name
+    }
+    if (roleName && (ROLE_PRIORITY[roleName] ?? 0) > (ROLE_PRIORITY[highestRole] ?? 0)) {
+      highestRole = roleName
+    }
+  }
+  return mapDbRole(highestRole)
+}
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<AuthSession | null>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Initialize session from localStorage on mount
   useEffect(() => {
-    const stored = getSession()
-    if (isSessionValid(stored)) {
-      setSession(stored)
-    } else {
-      clearSession()
-    }
-    setIsLoading(false)
+    // Get initial session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const role = await fetchUserRole(session.user.id)
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          role,
+          created_at: session.user.created_at,
+        })
+      }
+      setIsLoading(false)
+    })
+
+    // Subscribe to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const role = await fetchUserRole(session.user.id)
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          role,
+          created_at: session.user.created_at,
+        })
+      } else {
+        setUser(null)
+      }
+      setIsLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  const login = async (email: string, password: string, role: UserRole) => {
+  const login = async (email: string, password: string) => {
     setIsLoading(true)
-    try {
-      // TODO: Replace with real API call to backend
-      const { mockLoginUser } = await import('./auth')
-      const newSession = await mockLoginUser(email, password, role)
-      setSession(newSession)
-      saveSession(newSession)
-    } catch (error) {
-      console.error('Login failed:', error)
-      throw error
-    } finally {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
       setIsLoading(false)
+      throw error
     }
+    // user state is updated by onAuthStateChange
   }
 
   const logout = () => {
-    setSession(null)
-    clearSession()
+    supabase.auth.signOut()
   }
 
   const value: AuthContextType = {
-    session,
-    user: session?.user || null,
+    user,
     isLoading,
-    isAuthenticated: !!session,
+    isAuthenticated: !!user,
     login,
     logout,
   }
