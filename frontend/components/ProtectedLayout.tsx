@@ -35,8 +35,8 @@ export const ProtectedLayout = ({ children }: { children: ReactNode }) => {
   // Show loading while checking authentication
   if (!isMounted || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-900">Loading...</div>
       </div>
     )
   }
@@ -51,7 +51,7 @@ export const ProtectedLayout = ({ children }: { children: ReactNode }) => {
   return (
     <>
       <NavBar />
-      <main className="p-6">{children}</main>
+      <main className="p-6 bg-gray-50 min-h-screen">{children}</main>
     </>
   )
 }

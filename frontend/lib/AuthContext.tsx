@@ -15,10 +15,27 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const ROLE_PRIORITY: Record<string, number> = { admin: 4, warehouse: 3, manager: 2, buyer: 1 }
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000
+const ROLE_FETCH_TIMEOUT_MS = 5000
 
 function mapDbRole(dbRole: string): UserRole {
   if (dbRole === 'warehouse') return 'warehouse_operator'
   return dbRole as UserRole
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId)
+        resolve(value)
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timeoutId)
+        reject(error)
+      })
+  })
 }
 
 async function fetchUserRole(userId: string): Promise<UserRole> {
@@ -50,37 +67,89 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const role = await fetchUserRole(session.user.id)
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          role,
-          created_at: session.user.created_at,
-        })
+    let isMounted = true
+    const loadingGuard = setTimeout(() => {
+      if (isMounted) {
+        setIsLoading(false)
       }
-      setIsLoading(false)
-    })
+    }, AUTH_BOOTSTRAP_TIMEOUT_MS)
+
+    const initializeSession = async () => {
+      try {
+        const { data: { session } } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_BOOTSTRAP_TIMEOUT_MS,
+          'Timed out while initializing authentication session.'
+        )
+
+        if (!isMounted) return
+
+        if (session?.user) {
+          const role = await withTimeout(
+            fetchUserRole(session.user.id),
+            ROLE_FETCH_TIMEOUT_MS,
+            'Timed out while resolving user role.'
+          )
+          if (!isMounted) return
+
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            role,
+            created_at: session.user.created_at,
+          })
+        }
+      } catch {
+        if (isMounted) {
+          setUser(null)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void initializeSession()
 
     // Subscribe to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const role = await fetchUserRole(session.user.id)
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          role,
-          created_at: session.user.created_at,
-        })
-      } else {
-        setUser(null)
+      try {
+        if (session?.user) {
+          const role = await withTimeout(
+            fetchUserRole(session.user.id),
+            ROLE_FETCH_TIMEOUT_MS,
+            'Timed out while resolving user role.'
+          )
+          if (!isMounted) return
+
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            role,
+            created_at: session.user.created_at,
+          })
+        } else {
+          if (isMounted) {
+            setUser(null)
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setUser(null)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
-      setIsLoading(false)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      clearTimeout(loadingGuard)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const login = async (email: string, password: string) => {

@@ -15,7 +15,7 @@ export default function ManagerDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Main Inventory Stock - View Only */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Main Inventory (View Only)</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Main Inventory (View Only)</h2>
           <p className="text-gray-600 mb-4">View main stock levels</p>
           <button className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 font-medium">
             View Stock
@@ -24,7 +24,7 @@ export default function ManagerDashboard() {
 
         {/* Location Inventory - View Only */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Location Inventory (View Only)</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Location Inventory (View Only)</h2>
           <p className="text-gray-600 mb-4">View items at construction site locations</p>
           <button className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 font-medium">
             View Locations & Items
@@ -33,7 +33,7 @@ export default function ManagerDashboard() {
 
         {/* Orders - View Only */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Orders (View Only)</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Orders (View Only)</h2>
           <p className="text-gray-600 mb-4">View purchase orders and status</p>
           <button className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 font-medium">
             View Orders
@@ -42,7 +42,7 @@ export default function ManagerDashboard() {
 
         {/* Create Enquiries */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Enquiries</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Enquiries</h2>
           <p className="text-gray-600 mb-4">Create enquiries to warehouse or buyer</p>
           <div className="space-y-3">
             <button className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-medium">

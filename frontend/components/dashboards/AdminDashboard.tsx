@@ -40,9 +40,14 @@ export default function AdminDashboard() {
         .order('created_at', { ascending: false })
       if (supabaseError) throw supabaseError
       setSites(data || [])
+      setError('') // Clear any previous errors on success
     } catch (err) {
-      setError('Failed to load sites')
-      console.error(err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load sites'
+      setError(errorMessage)
+      // Only log actual errors, not just empty results
+      if (err instanceof Error && err.message) {
+        console.error('Error fetching sites:', err.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -57,11 +62,15 @@ export default function AdminDashboard() {
         .select('id, name, description, site_id')
         .eq('site_id', siteId)
         .order('created_at', { ascending: false })
-      if (!supabaseError) {
+      if (supabaseError) {
+        console.error('Error fetching projects:', supabaseError.message)
+      } else {
         setProjects(data || [])
       }
     } catch (err) {
-      console.error('Failed to fetch projects:', err)
+      if (err instanceof Error) {
+        console.error('Failed to fetch projects:', err.message)
+      }
     }
   }
 
@@ -77,7 +86,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Sites */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Construction Sites</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Construction Sites</h2>
           {loading ? (
             <p className="text-gray-500">Loading sites...</p>
           ) : sites.length === 0 ? (
@@ -94,7 +103,7 @@ export default function AdminDashboard() {
                       : 'bg-gray-50 border-2 border-gray-200 hover:border-indigo-300'
                   }`}
                 >
-                  <div className="font-medium">{site.name}</div>
+                  <div className="font-medium text-gray-900">{site.name}</div>
                   <div className="text-sm text-gray-600">{site.location}</div>
                 </button>
               ))}
@@ -104,7 +113,7 @@ export default function AdminDashboard() {
 
         {/* Projects */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Projects</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Projects</h2>
           {!selectedSiteId ? (
             <p className="text-gray-500">Select a site to view projects</p>
           ) : projects.length === 0 ? (
@@ -121,7 +130,7 @@ export default function AdminDashboard() {
                       : 'bg-gray-50 border-2 border-gray-200 hover:border-indigo-300'
                   }`}
                 >
-                  <div className="font-medium">{project.name}</div>
+                  <div className="font-medium text-gray-900">{project.name}</div>
                   <div className="text-sm text-gray-600">{project.description}</div>
                 </button>
               ))}
@@ -131,7 +140,7 @@ export default function AdminDashboard() {
 
         {/* Project Details */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Project Details</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Project Details</h2>
           {!selectedProjectId ? (
             <p className="text-gray-500">Select a project to view details</p>
           ) : (

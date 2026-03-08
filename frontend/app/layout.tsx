@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans">
+      <body className="font-sans bg-gray-50 text-gray-900 min-h-screen">
         <AuthProvider>
           <ProtectedLayout>{children}</ProtectedLayout>
         </AuthProvider>
