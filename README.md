@@ -141,8 +141,35 @@ For development/testing only (created by `npm run seed:local`):
 - Row Level Security (RLS) enabled on all tables
 - Role-based permissions enforced at database level
 - Session management with localStorage
-- Environment variables for secrets
+- Environment variables for secrets (never commit `.env` files)
 - CORS configured for API
+
+### Rotating Supabase Credentials
+
+If your Supabase project reference (`project-ref`) or connection details have ever been committed to git history, rotate all credentials as a precaution before making the repository public:
+
+1. **Log in** to [supabase.com/dashboard](https://supabase.com/dashboard) and open your project.
+
+2. **Regenerate the JWT Secret** (this also regenerates the `anon` and `service_role` API keys):
+   - Go to **Project Settings → API**
+   - Under "JWT Settings", click **Generate a new JWT Secret**
+   - Confirm the action — all existing sessions will be invalidated
+
+3. **Reset the Database Password**:
+   - Go to **Project Settings → Database**
+   - Scroll to "Database password" and click **Reset database password**
+   - Save the new password securely (e.g. in a password manager)
+
+4. **Update your local environment file** (`frontend/.env.local`) with the new values:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<new-anon-key>
+   ```
+   The new `anon` key is shown in **Project Settings → API** after the JWT Secret is regenerated.
+
+5. **Update any deployed environment** (e.g. Vercel environment variables) with the same new values.
+
+> **Note on git history**: Rotating credentials is the security fix. Rewriting git history (e.g. with `git filter-repo`) prevents casual discovery but is not a substitute for rotation, since the old values may already be cached by GitHub or other services.
 
 ## TODO
 
