@@ -118,11 +118,13 @@ const LoginPage = () => {
             </button>
           </div>
           <div className="mt-4 text-xs text-gray-500 space-y-1">
-            <p className="font-semibold">Seeded Test Credentials (run <code>npm run seed:local</code> first):</p>
-            <p>• boss@example.com / Passw0rd!boss</p>
-            <p>• warehouse@example.com / Passw0rd!warehouse</p>
-            <p>• manager@example.com / Passw0rd!manager</p>
-            <p>• buyer@example.com / Passw0rd!buyer</p>
+            <p className="font-semibold">
+              Seeded test credentials — run <code className="bg-gray-100 px-1 rounded">npm run seed:local</code> first:
+            </p>
+            <p>• boss@example.com / Passw0rd!boss <span className="text-indigo-600">(admin)</span></p>
+            <p>• warehouse@example.com / Passw0rd!warehouse <span className="text-indigo-600">(warehouse operator)</span></p>
+            <p>• manager@example.com / Passw0rd!manager <span className="text-indigo-600">(manager)</span></p>
+            <p>• buyer@example.com / Passw0rd!buyer <span className="text-indigo-600">(buyer)</span></p>
           </div>
         </div>
       </div>

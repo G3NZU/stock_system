@@ -96,12 +96,12 @@ Stock_System/
 
 ## Test Credentials
 
-For development/testing only:
+For development/testing only (created by `npm run seed:local`):
 
-- **Admin**: `admin@test.local` / `admin123`
-- **Warehouse Operator**: `warehouse_operator@test.local` / `warehouse123`
-- **Manager**: `manager@test.local` / `manager123`
-- **Buyer**: `buyer@test.local` / `buyer123`
+- **Admin (Boss)**: `boss@example.com` / `Passw0rd!boss`
+- **Warehouse Operator**: `warehouse@example.com` / `Passw0rd!warehouse`
+- **Manager**: `manager@example.com` / `Passw0rd!manager`
+- **Buyer**: `buyer@example.com` / `Passw0rd!buyer`
 
 ## Database Schema
 
@@ -146,8 +146,8 @@ For development/testing only:
 
 ## TODO
 
-- [ ] Replace mock authentication with real backend API
-- [ ] Implement actual inventory operations (add/remove/transfer)
+- [x] Replace mock authentication with real Supabase auth (roles enforced via RLS)
+- [x] Implement actual inventory operations (add/remove/transfer) in Warehouse Operator dashboard
 - [ ] Build enquiry management UI
 - [ ] Add order creation and management forms
 - [ ] Implement real-time updates
