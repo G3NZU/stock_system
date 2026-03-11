@@ -1,5 +1,8 @@
 # Supabase local development
 .supabase/
+supabase/.temp/
+supabase/.branches/
+supabase/snippets/
 
 # Env files / secrets
 .env
