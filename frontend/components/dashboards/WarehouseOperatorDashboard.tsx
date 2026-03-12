@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { ENQUIRY_SELECT } from '@/lib/queries'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,8 +35,31 @@ interface InventoryRow {
   locations: { id: string; name: string } | null
 }
 
+interface Enquiry {
+  id: string
+  project_id: string
+  item_id: string
+  quantity: number
+  delivery_location_id: string | null
+  assigned_role: string
+  status: string
+  notes: string | null
+  created_at: string
+  requested_by: string
+  items: { name: string } | null
+  locations: { name: string } | null
+  users: { email: string | null; full_name: string | null } | null
+}
+
 /** Which modal (if any) is currently open. */
-type ModalType = 'add' | 'remove' | 'transfer' | 'locations' | null
+type ModalType = 'add' | 'remove' | 'transfer' | 'locations' | 'enquiries' | 'create_enquiry' | null
+
+const STATUS_COLOURS: Record<string, string> = {
+  OPEN: 'bg-blue-100 text-blue-800',
+  IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
+  RESOLVED: 'bg-green-100 text-green-800',
+  REJECTED: 'bg-red-100 text-red-800',
+}
 
 // ─── Sub-components (defined outside to avoid re-creation on every render) ────
 
@@ -99,6 +123,7 @@ export default function WarehouseOperatorDashboard() {
   const [items, setItems] = useState<Item[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [inventory, setInventory] = useState<InventoryRow[]>([])
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([])
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [loadingProjects, setLoadingProjects] = useState(true)
@@ -113,6 +138,8 @@ export default function WarehouseOperatorDashboard() {
   const [formLocationId, setFormLocationId] = useState('')
   const [formToLocationId, setFormToLocationId] = useState('')
   const [formQty, setFormQty] = useState('1')
+  const [formAssignedRole, setFormAssignedRole] = useState<'warehouse' | 'buyer'>('warehouse')
+  const [formNotes, setFormNotes] = useState('')
 
   // ── Fetch projects the current user has access to ───────────────────────────
   // RLS on `project_user_roles` and `projects` automatically filters to the
@@ -175,10 +202,18 @@ export default function WarehouseOperatorDashboard() {
         .eq('items.project_id', projectId)
         .order('quantity', { ascending: false })
 
+      // Fetch enquiries for this project.
+      const { data: enqData } = await supabase
+        .from('enquiries')
+        .select(ENQUIRY_SELECT)
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+
       if (!mounted) return
       setItems(itemData ?? [])
       setLocations(locData ?? [])
       setInventory((invData as unknown as InventoryRow[]) ?? [])
+      setEnquiries((enqData as unknown as Enquiry[]) ?? [])
       setLoadingInventory(false)
     }
 
@@ -198,12 +233,24 @@ export default function WarehouseOperatorDashboard() {
     setInventory((invData as unknown as InventoryRow[]) ?? [])
   }
 
+  // ── Helper to refresh only the enquiries list ───────────────────────────────
+  const refreshEnquiries = async (projectId: string) => {
+    const { data: enqData } = await supabase
+      .from('enquiries')
+      .select(ENQUIRY_SELECT)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+    setEnquiries((enqData as unknown as Enquiry[]) ?? [])
+  }
+
   // ── Open a modal and reset its form state ───────────────────────────────────
   const openModalWith = (modal: ModalType) => {
     setFormItemId('')
     setFormLocationId('')
     setFormToLocationId('')
     setFormQty('1')
+    setFormAssignedRole('warehouse')
+    setFormNotes('')
     setOpError('')
     setOpSuccess('')
     setOpenModal(modal)
@@ -311,6 +358,47 @@ export default function WarehouseOperatorDashboard() {
       await refreshInventory(selectedProject.id)
     }
     setOpLoading(false)
+  }
+
+  // ── Enquiry operations ──────────────────────────────────────────────────────
+
+  /** Create a new enquiry – calls the `create_enquiry` RPC. */
+  const handleCreateEnquiry = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedProject) return
+    setOpLoading(true)
+    setOpError('')
+    setOpSuccess('')
+
+    const { error } = await supabase.rpc('create_enquiry', {
+      p_project_id: selectedProject.id,
+      p_item_id: formItemId,
+      p_quantity: Number(formQty),
+      p_delivery_location_id: formLocationId || null,
+      p_assigned_role: formAssignedRole,
+      p_notes: formNotes || null,
+    })
+
+    if (error) {
+      setOpError(error.message)
+    } else {
+      setOpSuccess('Enquiry created successfully!')
+      await refreshEnquiries(selectedProject.id)
+    }
+    setOpLoading(false)
+  }
+
+  /** Update enquiry status – calls the `update_enquiry_status` RPC. */
+  const handleUpdateEnquiryStatus = async (enquiryId: string, newStatus: string) => {
+    const { error } = await supabase.rpc('update_enquiry_status', {
+      p_enquiry_id: enquiryId,
+      p_status: newStatus,
+    })
+    if (error) {
+      console.error('Error updating enquiry status:', error.message)
+    } else if (selectedProject) {
+      await refreshEnquiries(selectedProject.id)
+    }
   }
 
   // ── Derived helpers ─────────────────────────────────────────────────────────
@@ -460,15 +548,23 @@ export default function WarehouseOperatorDashboard() {
               </button>
             </div>
 
-            {/* Enquiries (placeholder – future feature) */}
+            {/* Enquiries */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Enquiries</h2>
-              <p className="text-gray-600 mb-4 text-sm">Manage stock enquiries and requests.</p>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Enquiries</h2>
+              <p className="text-gray-600 mb-4 text-sm">
+                {enquiries.filter((e) => e.assigned_role === 'warehouse' && e.status === 'OPEN').length} open enquiry(s) assigned to warehouse.
+              </p>
               <div className="space-y-3">
-                <button className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 font-medium transition">
-                  Received Enquiries
+                <button
+                  onClick={() => openModalWith('enquiries')}
+                  className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 font-medium transition"
+                >
+                  View Enquiries ({enquiries.length})
                 </button>
-                <button className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-medium transition">
+                <button
+                  onClick={() => openModalWith('create_enquiry')}
+                  className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-medium transition"
+                >
                   Create New Enquiry
                 </button>
               </div>
@@ -865,6 +961,194 @@ export default function WarehouseOperatorDashboard() {
           >
             Close
           </button>
+        </Modal>
+      )}
+
+      {/* ── Enquiries list modal ── */}
+      {openModal === 'enquiries' && selectedProject && (
+        <Modal title={`Enquiries — ${selectedProject.name}`} onClose={closeModal}>
+          {enquiries.length === 0 ? (
+            <p className="text-gray-500 text-sm">No enquiries for this project yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {enquiries.map((enq) => {
+                const isMine = enq.assigned_role === 'warehouse'
+                const canUpdate = isMine && enq.status !== 'RESOLVED' && enq.status !== 'REJECTED'
+                return (
+                  <div key={enq.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {enq.items?.name ?? '—'} &times; {enq.quantity}
+                        </p>
+                        {enq.locations?.name && (
+                          <p className="text-sm text-gray-600">Deliver to: {enq.locations.name}</p>
+                        )}
+                        {enq.notes && (
+                          <p className="text-sm text-gray-500 italic mt-1">{enq.notes}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">
+                          Assigned to: <span className="capitalize font-medium">{enq.assigned_role}</span>
+                          {' · '}
+                          {enq.users?.email || enq.requested_by}
+                          {' · '}
+                          {new Date(enq.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLOURS[enq.status] ?? 'bg-gray-100 text-gray-800'}`}>
+                        {enq.status}
+                      </span>
+                    </div>
+                    {canUpdate && (
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+                        <span className="text-xs text-gray-500 self-center">Update status:</span>
+                        {enq.status !== 'IN_PROGRESS' && (
+                          <button
+                            onClick={() => void handleUpdateEnquiryStatus(enq.id, 'IN_PROGRESS')}
+                            className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200 font-medium"
+                          >
+                            In Progress
+                          </button>
+                        )}
+                        <button
+                          onClick={() => void handleUpdateEnquiryStatus(enq.id, 'RESOLVED')}
+                          className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 font-medium"
+                        >
+                          Resolve
+                        </button>
+                        <button
+                          onClick={() => void handleUpdateEnquiryStatus(enq.id, 'REJECTED')}
+                          className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <button
+            onClick={closeModal}
+            className="w-full mt-5 bg-gray-100 hover:bg-gray-200 text-gray-800 py-2 rounded-lg font-medium"
+          >
+            Close
+          </button>
+        </Modal>
+      )}
+
+      {/* ── Create enquiry modal ── */}
+      {openModal === 'create_enquiry' && selectedProject && (
+        <Modal title="Create Enquiry" onClose={closeModal}>
+          <OpStatus error={opError} success={opSuccess} />
+          {opSuccess ? (
+            <button
+              onClick={closeModal}
+              className="w-full mt-2 bg-gray-100 hover:bg-gray-200 text-gray-800 py-2 rounded-lg font-medium"
+            >
+              Close
+            </button>
+          ) : (
+            <form onSubmit={(e) => void handleCreateEnquiry(e)} className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Create an enquiry for stock needed, assigned to the warehouse or buyer.
+              </p>
+
+              {/* Assign to */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign To</label>
+                <select
+                  value={formAssignedRole}
+                  onChange={(e) => setFormAssignedRole(e.target.value as 'warehouse' | 'buyer')}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="warehouse">Warehouse</option>
+                  <option value="buyer">Buyer</option>
+                </select>
+              </div>
+
+              {/* Item */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Item</label>
+                <select
+                  value={formItemId}
+                  onChange={(e) => setFormItemId(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">— Select item —</option>
+                  {items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}{item.sku ? ` (${item.sku})` : ''}{item.unit_type ? ` · ${item.unit_type}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formQty}
+                  onChange={(e) => setFormQty(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Delivery location (optional) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Delivery Location <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <select
+                  value={formLocationId}
+                  onChange={(e) => setFormLocationId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">— No preference —</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>{loc.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  placeholder="Any additional details…"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={opLoading || !formItemId}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium disabled:opacity-50"
+                >
+                  {opLoading ? 'Submitting…' : 'Create Enquiry'}
+                </button>
+              </div>
+            </form>
+          )}
         </Modal>
       )}
     </div>
