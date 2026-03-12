@@ -47,7 +47,7 @@ export default function NavBar() {
             <div className="absolute right-0 mt-2 w-48 bg-white text-gray-900 rounded-lg shadow-lg py-2 z-50">
               <div className="px-4 py-2 border-b border-gray-200">
                 <p className="text-sm font-medium">{user.email}</p>
-                <p className="text-xs text-gray-600 capitalize">{user.role.replace('_', ' ')}</p>
+                <p className="text-xs text-gray-600 capitalize">{user.role.replace(/_/g, ' ')}</p>
               </div>
               <button
                 onClick={handleLogout}

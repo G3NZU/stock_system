@@ -105,14 +105,13 @@ export default function AdminDashboard() {
         .eq('site_id', siteId)
         .order('created_at', { ascending: false })
       if (supabaseError) {
-        console.error('Error fetching projects:', supabaseError.message)
+        setError(supabaseError.message)
       } else {
         setProjects(data || [])
+        setError('')
       }
     } catch (err) {
-      if (err instanceof Error) {
-        console.error('Failed to fetch projects:', err.message)
-      }
+      setError(err instanceof Error ? err.message : 'Failed to load projects')
     }
   }
 
@@ -120,17 +119,18 @@ export default function AdminDashboard() {
     setLoadingDetail(true)
     setMembersError('')
     try {
-      // Fetch members via RPC (SECURITY DEFINER, site-owner or project-admin only)
+      // Fetch members via RPC (SECURITY DEFINER, site-owner or project-admin only).
       const { data: memberData, error: memberError } = await supabase
         .rpc('get_project_members', { p_project_id: projectId })
       if (memberError) {
-        console.error('Error fetching members:', memberError.message)
         setMembersError(memberError.message)
       } else {
         setMembers((memberData as ProjectMember[]) || [])
       }
 
-      // Fetch inventory
+      // Fetch inventory joined with item and location names.
+      // `items!inner` + `.eq('items.project_id', projectId)` ensures only rows
+      // belonging to this project are returned (filters via the FK relationship).
       const { data: invData } = await supabase
         .from('inventory')
         .select('id, quantity, item_id, location_id, items!inner(id, name, sku, unit_type, project_id), locations(id, name)')
@@ -138,7 +138,7 @@ export default function AdminDashboard() {
         .order('quantity', { ascending: false })
       setInventory((invData as unknown as InventoryRow[]) || [])
 
-      // Fetch locations
+      // Fetch locations for this project.
       const { data: locData } = await supabase
         .from('locations')
         .select('id, name')
@@ -146,7 +146,7 @@ export default function AdminDashboard() {
         .order('name')
       setLocations(locData || [])
     } catch (err) {
-      console.error('Error fetching project detail:', err)
+      setMembersError(err instanceof Error ? err.message : 'Failed to load project details')
     } finally {
       setLoadingDetail(false)
     }
