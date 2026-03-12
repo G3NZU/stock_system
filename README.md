@@ -175,7 +175,7 @@ If your Supabase project reference (`project-ref`) or connection details have ev
 
 - [x] Replace mock authentication with real Supabase auth (roles enforced via RLS)
 - [x] Implement actual inventory operations (add/remove/transfer) in Warehouse Operator dashboard
-- [ ] Build enquiry management UI
+- [x] Build enquiry management UI
 - [ ] Add order creation and management forms
 - [ ] Implement real-time updates
 - [ ] Add user profile management
