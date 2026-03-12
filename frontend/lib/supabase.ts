@@ -19,8 +19,8 @@ function isPrivateIpHost(hostname: string): boolean {
   if (!match) return false
 
   const secondOctet = Number.parseInt(match[1], 10)
-  // Guard against non-numeric or out-of-range octets (e.g. "172.999.0.0").
-  if (Number.isNaN(secondOctet) || secondOctet > 255) return false
+  // Guard against out-of-range octets (e.g. "172.999.0.0").
+  if (secondOctet > 255) return false
   return secondOctet >= 16 && secondOctet <= 31
 }
 

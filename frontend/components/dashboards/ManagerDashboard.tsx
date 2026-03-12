@@ -166,12 +166,16 @@ export default function ManagerDashboard() {
 
   /** Re-fetches all enquiries for the given project (all roles, since managers can see everything). */
   const refreshEnquiries = async (projectId: string) => {
-    const { data: enqData } = await supabase
+    const { data: enqData, error } = await supabase
       .from('enquiries')
       .select(ENQUIRY_SELECT)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-    setEnquiries((enqData as unknown as Enquiry[]) ?? [])
+    if (error) {
+      setOpError(error.message)
+    } else {
+      setEnquiries((enqData as unknown as Enquiry[]) ?? [])
+    }
   }
 
   const handleCreateEnquiry = async (e: React.FormEvent) => {

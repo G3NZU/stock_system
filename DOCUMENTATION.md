@@ -14,11 +14,12 @@
    - [Tables & Relationships](#tables--relationships)
    - [Row Level Security (RLS)](#row-level-security-rls)
    - [Database Functions (RPCs)](#database-functions-rpcs)
-6. [Backend – The Express API](#6-backend--the-express-api)
+6. [Backend – The Express API (Deprecated)](#6-backend--the-express-api-deprecated)
 7. [Frontend – The Next.js Application](#7-frontend--the-nextjs-application)
    - [App Router & Pages](#app-router--pages)
    - [Authentication Flow](#authentication-flow)
    - [Role-Based Dashboards](#role-based-dashboards)
+   - [Shared Dashboard Components](#shared-dashboard-components)
    - [Tailwind CSS Styling](#tailwind-css-styling)
 8. [How Data Flows End-to-End](#8-how-data-flows-end-to-end)
 9. [Environment Variables & Configuration](#9-environment-variables--configuration)
@@ -40,10 +41,10 @@ The system lets different people with different jobs manage the inventory:
 |------|-------------|
 | **Admin (boss)** | Oversees everything; reads all data across sites and projects; cannot directly manipulate stock |
 | **Warehouse Operator** | Receives goods, adds them to stock, removes stock, transfers between locations, and handles enquiries |
-| **Manager** | Views stock levels and orders to make decisions; creates enquiries to request items or orders |
-| **Buyer** | Creates and manages purchase orders with suppliers; handles enquiries routed to them |
+| **Manager** | Views stock levels; creates enquiries to request items from the warehouse or buyer |
+| **Buyer** | Manages purchase orders with suppliers; handles enquiries routed to them |
 
-The project is in **active development** – the core data model, security, and read-only dashboards are working. The interactive parts (buttons that actually perform actions) are placeholders for the next phase.
+The project has a **working core**: authentication, role-based dashboards, full inventory operations (add/remove/transfer stock), and a complete enquiry workflow are all functional. Orders are visible but the order-creation UI is a placeholder for the next phase.
 
 ---
 
@@ -118,40 +119,28 @@ app/
 </button>
 ```
 
-### 2.5 Express.js
+### 2.5 Express.js (Deprecated / Not in active use)
 
 **What it is:** Express is a minimal web framework for Node.js. You define HTTP routes (e.g. GET `/api/sites`) and what each route returns.
 
-**Why it's used here:** The frontend (browser) cannot directly use the `SUPABASE_SERVICE_ROLE_KEY` (it's a secret). Instead, the Express backend holds the secret and exposes a safe public API. Any business logic that shouldn't run in the browser lives here.
-
-```typescript
-// An Express route
-router.get('/', async (_req, res) => {
-  const { data, error } = await supabase.from('sites').select('*')
-  if (error) return res.status(500).json({ error: error.message })
-  return res.json(data)
-})
-```
+**Current status:** The Express backend exists in the `backend/` folder but is **no longer used by the frontend**. All data operations now go directly from the browser to Supabase via the Supabase JS client. The backend code is kept for reference but can be removed if desired. See Section 6 for details.
 
 ### 2.6 Supabase
 
 **What it is:** Supabase is an open-source "Backend-as-a-Service" (BaaS) built on top of **PostgreSQL**. It provides:
 - A PostgreSQL database
-- An auto-generated REST and GraphQL API
 - Authentication (user accounts, sessions, JWTs)
 - Row Level Security enforcement
+- An auto-generated REST API
 - Real-time subscriptions
 - A web-based Studio UI for managing the database
 - A CLI for local development
 
 **Why it's used here:** Instead of building a custom auth system and database API from scratch, Supabase provides all of that. You can run it **locally** with `supabase start` (it spins up Docker containers) which is ideal for development.
 
-**Two Supabase clients in this project:**
+**One Supabase client in this project:**
 
-| Client | Key used | Where used | Purpose |
-|--------|----------|------------|---------|
-| `@supabase/supabase-js` (anon) | `SUPABASE_ANON_KEY` | Frontend browser | Limited access, protected by RLS policies |
-| `@supabase/supabase-js` (service role) | `SUPABASE_SERVICE_ROLE_KEY` | Backend server | Full admin access, bypasses RLS |
+The frontend uses the `@supabase/supabase-js` library with the **anon key** (`NEXT_PUBLIC_SUPABASE_ANON_KEY`). This gives limited access that is enforced by RLS policies – users can only see and modify data they are authorised to touch.
 
 ### 2.7 PostgreSQL (via Supabase)
 
@@ -169,13 +158,13 @@ router.get('/', async (_req, res) => {
 
 **What it is:** Node.js lets you run JavaScript/TypeScript on your computer (not just in a browser). npm (Node Package Manager) manages all the third-party libraries the project depends on.
 
-**Why it's used here:** Both the Express backend and the Next.js frontend run on Node.js. npm scripts (in `package.json`) are used to start the app, run tests, and manage the database.
+**Why it's used here:** The Next.js frontend runs on Node.js. npm scripts (in `package.json`) are used to start the app, run tests, and manage the database.
 
 ### 2.10 Concurrently
 
 **What it is:** A small npm package that runs multiple commands at the same time in one terminal.
 
-**Why it's used here:** The project has two servers to run (frontend on port 3000, backend on port 4000). `concurrently` starts both with one command: `npm run dev`.
+**Why it's used here:** The project has two dev servers to potentially run (frontend on port 3000, backend on port 4000). `concurrently` starts both with one command: `npm run dev`.
 
 ### 2.11 dotenv
 
@@ -187,7 +176,7 @@ router.get('/', async (_req, res) => {
 
 ## 3. Architecture Overview
 
-The project follows a **three-tier architecture**:
+The project uses a **two-tier architecture**: a Next.js frontend that talks directly to Supabase (PostgreSQL):
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -197,26 +186,16 @@ The project follows a **three-tier architecture**:
 │    http://localhost:3000                                     │
 │    - Login page                                             │
 │    - Role-based dashboards                                  │
-│    - Talks to Backend API via fetch()                       │
-└───────────────────┬──────────────────────┬──────────────────┘
-                    │ HTTP (fetch)          │ Supabase JS client
-                    │ http://localhost:4000 │ (anon key, for auth)
-                    ▼                       ▼
-┌─────────────────────────────┐  ┌──────────────────────────────┐
-│  Express Backend API        │  │  Supabase Auth               │
-│  http://localhost:4000      │  │  http://localhost:54321/auth  │
-│  - /api/sites               │  │  - signInWithPassword        │
-│  - /api/projects            │  │  - JWT token management      │
-│  - /api/items               │  └──────────────────────────────┘
-│  - /api/inventory           │
-│  - /api/orders              │
-│  Uses service role key      │
-└───────────────┬─────────────┘
-                │ Service Role Key (admin access)
-                ▼
+│    - Calls Supabase JS client directly for all data         │
+└───────────────────────────────┬─────────────────────────────┘
+                                │ Supabase JS client
+                                │ (anon key + user JWT)
+                                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 Supabase / PostgreSQL                        │
 │                 http://localhost:54321                       │
+│                                                             │
+│  Auth: signInWithPassword, JWT token management             │
 │                                                             │
 │  Tables: sites, projects, locations, items, inventory,      │
 │          orders, order_items, enquiries, roles, users, ...  │
@@ -226,13 +205,15 @@ The project follows a **three-tier architecture**:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Note:** A separate Express backend (`backend/`) exists in the repository but is currently **not used**. It was part of an earlier design where the frontend called the backend and the backend called Supabase using an admin key. The architecture was simplified: the frontend now uses the Supabase JS client directly with the anon key + RLS for security. The backend code remains as a reference but can be deleted if it causes confusion.
+
 **Key architectural decisions:**
 
-1. **Why a separate Express backend?** The frontend (browser) can't safely store the `SUPABASE_SERVICE_ROLE_KEY`. The backend holds this key and exposes only what the frontend needs. In the future, the backend will also handle complex business logic, validation, and authentication.
+1. **Why does the frontend use Supabase directly?** The Supabase anon key has limited permissions enforced by RLS policies. Users can only access rows they are authorised to see. All mutations go through `SECURITY DEFINER` stored functions that validate the caller's role before doing anything. This is safe without a separate backend server.
 
-2. **Why does the frontend also use Supabase directly?** For authentication (`supabase.auth.signInWithPassword`). Auth tokens are needed in the browser. The frontend uses the `ANON_KEY` which has limited permissions enforced by RLS.
+2. **Why RLS at the database level?** Security at the database level means that even if the application code has a bug, unauthorised data access is blocked by PostgreSQL itself. RLS is the last line of defence.
 
-3. **Why RLS at the database level?** Security at the database level means that even if the application code has a bug, unauthorised data access is blocked by PostgreSQL itself. RLS is the last line of defence.
+3. **Why store functions (RPCs) for mutations?** Operations like `add_stock` and `transfer_stock` need to be **atomic** (all-or-nothing) and need to enforce business rules (e.g. you can't transfer more than you have). Putting this logic in the database means it runs in a single transaction and is enforced regardless of which client calls it.
 
 ---
 
@@ -245,7 +226,7 @@ stock_system/                          ← Root of the project
 ├── README.md                          ← Quick-start guide
 ├── DOCUMENTATION.md                   ← This file!
 │
-├── frontend/                          ← The Next.js web application
+├── frontend/                          ← The Next.js web application (active)
 │   ├── package.json                   ← Frontend dependencies (React, Next.js, Tailwind)
 │   ├── next.config.ts                 ← Next.js configuration
 │   ├── tsconfig.json                  ← TypeScript configuration for frontend
@@ -256,12 +237,12 @@ stock_system/                          ← Root of the project
 │   ├── app/                           ← Next.js App Router – each folder = a URL route
 │   │   ├── layout.tsx                 ← Root layout: wraps every page with AuthProvider + NavBar
 │   │   ├── globals.css                ← Global CSS (Tailwind imports)
-│   │   ├── page.tsx                   ← Root page "/" – redirects to /dashboard
+│   │   ├── page.tsx                   ← Root page "/" – redirects authenticated users to /dashboard
 │   │   ├── login/
-│   │   │   └── page.tsx               ← Login page (/login)
+│   │   │   └── page.tsx               ← Login page (/login) with quick-login buttons for dev
 │   │   ├── dashboard/
 │   │   │   └── page.tsx               ← Dashboard router – picks correct dashboard by role
-│   │   └── _reference/                ← Reference/placeholder pages (not in use yet)
+│   │   └── _reference/                ← Old placeholder pages (not linked from UI, kept for reference)
 │   │       ├── inventory/page.tsx
 │   │       ├── items/page.tsx
 │   │       ├── orders/page.tsx
@@ -271,24 +252,25 @@ stock_system/                          ← Root of the project
 │   │   ├── NavBar.tsx                 ← Top navigation bar (shown on all protected pages)
 │   │   ├── ProtectedLayout.tsx        ← Redirects unauthenticated users to /login
 │   │   └── dashboards/
+│   │       ├── shared/                ← Components shared across multiple dashboards
+│   │       │   ├── Modal.tsx          ← Generic overlay modal wrapper
+│   │       │   ├── OpStatus.tsx       ← Error / success feedback banner
+│   │       │   └── constants.ts       ← Shared display constants (e.g. STATUS_COLOURS)
 │   │       ├── AdminDashboard.tsx     ← Dashboard for admin/boss role
 │   │       ├── WarehouseOperatorDashboard.tsx
 │   │       ├── ManagerDashboard.tsx
 │   │       └── BuyerDashboard.tsx
 │   │
-│   ├── lib/                           ← Shared utilities and logic
-│   │   ├── supabase.ts                ← Creates and exports the Supabase browser client
-│   │   ├── auth.ts                    ← Auth types, session helpers, mock login logic
-│   │   ├── AuthContext.tsx            ← React Context: shares auth state across all components
-│   │   └── api.ts                     ← Helper function for calling the Express backend
-│   │
-│   └── public/                        ← Static files (images, icons)
+│   └── lib/                           ← Shared utilities and logic
+│       ├── supabase.ts                ← Creates and exports the Supabase browser client singleton
+│       ├── auth.ts                    ← Auth types (UserRole, User) and permission-check helpers
+│       ├── AuthContext.tsx            ← React Context: shares auth state across all components
+│       └── queries.ts                 ← Shared Supabase query field strings (e.g. ENQUIRY_SELECT)
 │
-├── backend/                           ← The Express.js API server
-│   ├── package.json                   ← Backend dependencies (express, cors, supabase-js)
+├── backend/                           ← Express.js API server (DEPRECATED – not in active use)
+│   ├── package.json                   ← Backend dependencies
 │   ├── tsconfig.json                  ← TypeScript configuration for backend
 │   ├── .env.example                   ← Template for environment variables
-│   │
 │   └── src/
 │       ├── index.ts                   ← Entry point: creates Express app, registers routes
 │       └── lib/
@@ -315,7 +297,8 @@ stock_system/                          ← Root of the project
 │       └── 20260226200631_update_create_order_require_supplier.sql
 │
 ├── scripts/
-│   └── seed-local.mjs                 ← Creates test users and data in the local database
+│   ├── seed-local.mjs                 ← Creates test users and data in the local database
+│   └── prepare-frontend-dev.mjs       ← Helper for setting up the frontend dev environment
 │
 └── tests/
     └── rls.test.ts                    ← Tests that verify RLS policies work correctly
@@ -421,6 +404,7 @@ sites ──< site_members >── users
 - `items.is_active` is a **soft delete** flag. Items are never deleted; they're just marked inactive. This preserves historical data (past orders and enquiries still reference them).
 - `orders.status` starts as `PENDING` and progresses through a lifecycle.
 - `enquiries.assigned_role` determines which role is responsible for acting on the request.
+- The database stores role names as `'warehouse'` but the frontend maps this to `'warehouse_operator'` for clarity (see `lib/AuthContext.tsx` → `mapDbRole`).
 
 ### Row Level Security (RLS)
 
@@ -493,6 +477,7 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
 | `create_enquiry(p_project_id, p_item_id, p_quantity, p_delivery_location_id, p_assigned_role, p_notes)` | Any project member | Creates a new enquiry request |
 | `update_enquiry_status(p_enquiry_id, p_status)` | admin or assigned role | Changes enquiry status with validation and audit logging |
 | `update_order_status(p_order_id, p_status)` | (to be restricted) | Updates an order's status |
+| `get_project_members(p_project_id)` | Site owner / project admin | Returns all members with their roles for a project |
 
 **Why use RPCs instead of direct table INSERT/UPDATE?**
 1. **Atomicity** – `transfer_stock` removes from one location and adds to another in a single transaction. If one part fails, the whole thing is rolled back.
@@ -503,90 +488,36 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
 
 ---
 
-## 6. Backend – The Express API
+## 6. Backend – The Express API (Deprecated)
 
-The backend is a Node.js server that sits between the frontend and the database.
+> ⚠️ **This backend is not used by the frontend.** All data access now goes directly from the browser to Supabase. This section describes what the code does, but you can ignore or delete the `backend/` folder if you want.
 
-**File: `backend/src/index.ts`** – The entry point:
+The backend folder contains a Node.js Express server that was part of an earlier design. At the time, the reasoning was: the browser can't safely store the `SUPABASE_SERVICE_ROLE_KEY`, so a backend server holds that key and exposes a safe API.
 
-```typescript
-import express from 'express'
-import cors from 'cors'
-// ... route imports
+This approach was later replaced. The frontend now uses the **anon key** with RLS policies enforcing security, and mutations go through **SECURITY DEFINER stored functions** in the database. There is no longer a need for a separate backend for these operations.
 
-const app = express()
-app.use(cors())           // Allows the frontend (different port) to call this API
-app.use(express.json())   // Parses JSON request bodies
+**What the backend code does (for reference):**
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
-})
+`backend/src/index.ts` – Creates an Express app on port 4000 with CORS enabled.
 
-app.use('/api/sites', sitesRouter)
-app.use('/api/projects', projectsRouter)
-// ...
+`backend/src/lib/supabase.ts` – Creates a Supabase admin client using the `SERVICE_ROLE_KEY`. This bypasses all RLS.
 
-app.listen(4000)
-```
+**Read-only routes (all GET only):**
 
-**CORS (Cross-Origin Resource Sharing):** Browsers block requests from `http://localhost:3000` (frontend) to `http://localhost:4000` (backend) by default because they're different "origins". The `cors()` middleware tells the backend to allow these requests.
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/health` | Server health check |
+| GET | `/api/sites` | List all sites |
+| GET | `/api/sites/:id` | Get one site |
+| GET | `/api/projects` | List projects (filter by `?site_id=`) |
+| GET | `/api/projects/:id` | Get one project |
+| GET | `/api/items` | List items (filter by `?project_id=`) |
+| GET | `/api/items/:id` | Get one item |
+| GET | `/api/inventory` | List inventory rows |
+| GET | `/api/orders` | List orders |
+| GET | `/api/orders/:id` | Get order with its line items |
 
-**File: `backend/src/lib/supabase.ts`** – The Supabase admin client:
-
-```typescript
-export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
-```
-
-This uses the `SERVICE_ROLE_KEY` which **bypasses all RLS policies**. This is intentional because the backend is a trusted server that enforces its own access control. The `autoRefreshToken: false, persistSession: false` options are important for server-side use (no user sessions to manage here).
-
-**Route pattern (example: `backend/src/routes/sites.ts`):**
-
-```typescript
-// GET /api/sites
-router.get('/', async (_req, res) => {
-  const { data, error } = await supabase
-    .from('sites')
-    .select('id, name, location, created_at')
-    .order('created_at', { ascending: false })
-  
-  if (error) return res.status(500).json({ error: error.message })
-  return res.json(data || [])
-})
-
-// GET /api/sites/:id
-router.get('/:id', async (req, res) => {
-  const { data, error } = await supabase
-    .from('sites')
-    .select('id, name, location, created_at')
-    .eq('id', req.params.id)   // WHERE id = ?
-    .single()                   // Expect exactly one row
-  
-  if (error) {
-    if (error.code === 'PGRST116') return res.status(404).json({ error: 'Site not found' })
-    return res.status(500).json({ error: error.message })
-  }
-  return res.json(data)
-})
-```
-
-**PGRST116** is the Supabase/PostgREST error code for "zero rows returned" when `.single()` is used. It's translated to an HTTP 404 (Not Found).
-
-**Available API Endpoints:**
-
-| Method | URL | Query Params | Description |
-|--------|-----|-------------|-------------|
-| GET | `/health` | – | Server health check |
-| GET | `/api/sites` | – | List all sites |
-| GET | `/api/sites/:id` | – | Get one site |
-| GET | `/api/projects` | `?site_id=` | List projects (filter by site) |
-| GET | `/api/projects/:id` | – | Get one project |
-| GET | `/api/items` | `?project_id=` | List items (filter by project) |
-| GET | `/api/items/:id` | – | Get one item |
-| GET | `/api/inventory` | `?project_id=` | List inventory rows |
-| GET | `/api/orders` | `?project_id=` | List orders |
-| GET | `/api/orders/:id` | – | Get order with its line items |
+None of these endpoints are called from the current frontend code.
 
 ---
 
@@ -596,7 +527,7 @@ router.get('/:id', async (req, res) => {
 
 Next.js 13+ uses the **App Router**. Every `page.tsx` file inside the `app/` directory becomes a web page.
 
-**`app/layout.tsx`** is the root layout. It wraps **every** page in the application. This is where the `AuthProvider` and `ProtectedLayout` are set up:
+**`app/layout.tsx`** is the root layout. It wraps **every** page in the application. This is where `AuthProvider` and `ProtectedLayout` are set up:
 
 ```tsx
 export default function RootLayout({ children }) {
@@ -614,40 +545,59 @@ export default function RootLayout({ children }) {
 }
 ```
 
+**`app/page.tsx`** – The root page (`/`). Logged-in users are redirected to `/dashboard`; unauthenticated users are sent to `/login` by `ProtectedLayout`.
+
+**`app/login/page.tsx`** – The login page. Contains email/password fields and a set of quick-login buttons for development (pre-fills credentials for each test user). The quick-login section is intended for local development only.
+
+**`app/dashboard/page.tsx`** – A role router. Reads `user.role` and renders the correct dashboard component.
+
+**`app/\_reference/`** – Old placeholder pages that are not linked from the main UI. These can be deleted.
+
 ### Authentication Flow
 
-The auth system is currently **mocked** (simulated locally), with a clear path to replace it with real authentication.
-
-**Current flow:**
+Authentication uses real **Supabase Auth** (JWT-based). There is no mock system.
 
 ```
 1. User visits http://localhost:3000
 2. ProtectedLayout checks: is user authenticated?
    - No → redirect to /login
    - Yes → show the page + NavBar
+
 3. On /login page:
-   - User enters email + password + selects role
-   - OR clicks a "Quick Login" button (for testing)
-4. login() in AuthContext calls mockLoginUser()
-   - mockLoginUser() checks hardcoded MOCK_USERS object
-   - Creates a fake session with a random token
-   - Session is saved to localStorage
+   - User enters email + password
+   - OR clicks a "Quick Login" button (for local development)
+   - login() in AuthContext is called
+
+4. login() calls supabase.auth.signInWithPassword({ email, password })
+   - Supabase verifies credentials, returns a JWT
+   - onAuthStateChange fires, which:
+     a. Gets the Supabase session (contains user ID)
+     b. Queries project_user_roles to find the user's highest role
+     c. Calls setUser({ id, email, role, created_at })
+
 5. User is redirected to /dashboard
+
 6. Dashboard page reads user.role and renders the correct dashboard component
-7. On logout: session cleared from localStorage, redirected to /login
+
+7. All subsequent Supabase queries use the stored JWT automatically
+   (the Supabase JS client handles this transparently)
+
+8. On logout: supabase.auth.signOut() clears the session; ProtectedLayout
+   detects unauthenticated state and redirects to /login
 ```
-
-**Why localStorage?** It persists the session across page refreshes. When the page loads, `AuthContext` reads from localStorage and restores the session if it hasn't expired (24-hour expiry).
-
-**Important:** The current mock auth does NOT connect to Supabase Auth or the backend. The `TODO` comment in `AuthContext.tsx` marks where a real API call should go.
 
 **Key files:**
 
-- **`lib/auth.ts`** – Types (`UserRole`, `User`, `AuthSession`), localStorage helpers (`saveSession`, `getSession`, `clearSession`), the mock login function, and permission-check helper functions.
+- **`lib/supabase.ts`** – A singleton Supabase client. Uses the anon key. Includes logic to resolve the Supabase URL for local network access (so the app works when accessed from a LAN IP).
 
-- **`lib/AuthContext.tsx`** – A React Context. Context is a way to share data across many components without passing it through props at every level. Any component can call `useAuth()` to get the current user, login function, and logout function.
+- **`lib/auth.ts`** – Types (`UserRole`, `User`) and permission-check helper functions (`canViewStock`, `canCreateEnquiries`, etc.). These helpers are available for use in components when fine-grained permission checks are needed.
 
-- **`components/ProtectedLayout.tsx`** – A component that guards all pages. It uses `useEffect` to run after the component mounts in the browser (important because localStorage doesn't exist on the server). It redirects unauthenticated users to `/login` and already-authenticated users away from `/login`.
+- **`lib/AuthContext.tsx`** – A React Context that shares auth state across all components. Any component calls `useAuth()` to get `{ user, isLoading, isAuthenticated, login, logout }`. The context handles:
+  - Session initialisation on page load (with an 8-second timeout to prevent infinite loading)
+  - Listening for auth state changes (token refresh, sign-out in another tab)
+  - Fetching the user's role from `project_user_roles` after login
+
+- **`components/ProtectedLayout.tsx`** – Guards all pages. Redirects unauthenticated users to `/login` and authenticated users away from `/login` to `/dashboard`.
 
 ### Role-Based Dashboards
 
@@ -655,36 +605,50 @@ The auth system is currently **mocked** (simulated locally), with a clear path t
 
 ```tsx
 switch (user.role) {
-  case 'admin':           return <AdminDashboard />
+  case 'admin':              return <AdminDashboard />
   case 'warehouse_operator': return <WarehouseOperatorDashboard />
-  case 'manager':         return <ManagerDashboard />
-  case 'buyer':           return <BuyerDashboard />
+  case 'manager':            return <ManagerDashboard />
+  case 'buyer':              return <BuyerDashboard />
+  default:                   return <div>Unknown role: {user.role}</div>
 }
 ```
 
-**`AdminDashboard`** is the most complete dashboard so far. It:
-1. Fetches all sites from the backend API on mount (`useEffect`)
-2. When a site is clicked, fetches projects for that site
-3. When a project is clicked, shows placeholder panels for members, locations, stock, orders, and enquiries
+**`AdminDashboard`** – Read-only overview of the entire system. Shows:
+- All construction sites (fetched on mount)
+- Projects within the selected site
+- For the selected project: members (via `get_project_members` RPC), stock, and locations
 
-The other dashboards (`WarehouseOperatorDashboard`, `ManagerDashboard`, `BuyerDashboard`) show the correct **panels** for each role (with appropriate action buttons), but the buttons don't perform real actions yet.
+**`WarehouseOperatorDashboard`** – Full inventory management. Features:
+- Project selector (auto-selects when there is only one project)
+- Live inventory table with item, SKU, location, quantity, and unit
+- Modals for: Add Stock, Remove Stock, Transfer Stock, View Locations, View/Update Enquiries, Create Enquiry to Buyer
+- All mutations call Supabase RPCs (`add_stock`, `remove_stock`, `transfer_stock`, `create_enquiry`, `update_enquiry_status`)
+- After each mutation, inventory/enquiry data is refreshed from the database
 
-**`lib/api.ts`** – A tiny helper used to call the Express backend:
+**`ManagerDashboard`** – Oversight and coordination. Features:
+- Project selector
+- Read-only stock and location modals
+- View all enquiries for the project
+- Create enquiries assigned to either the warehouse or buyer
 
-```typescript
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+**`BuyerDashboard`** – Purchasing and order management. Features:
+- Project selector
+- Read-only stock and location modals
+- View enquiries assigned to buyer; update their status
+- Create enquiries assigned to the warehouse
+- Placeholder UI for purchase order creation (not yet implemented)
 
-export async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
-  return res.json()
-}
-```
+**`lib/queries.ts`** – Centralises the Supabase query select string for enquiries so all dashboards use the same field list and don't get out of sync.
 
-Note: `AdminDashboard` currently uses `fetch` directly instead of `apiFetch`. The `apiFetch` helper is ready to be used consistently once more features are added.
+### Shared Dashboard Components
+
+To avoid duplicating the same code in every dashboard, three shared components live in `components/dashboards/shared/`:
+
+| File | What it provides |
+|------|-----------------|
+| `Modal.tsx` | Generic overlay modal with title, close button, and scrollable body. Accepts a `size` prop (`'lg'` or `'2xl'`). |
+| `OpStatus.tsx` | Shows a red error banner or green success banner after an operation. |
+| `constants.ts` | `STATUS_COLOURS` – Tailwind class strings for enquiry status badges (`OPEN`, `IN_PROGRESS`, `RESOLVED`, `REJECTED`). |
 
 ### Tailwind CSS Styling
 
@@ -719,80 +683,117 @@ className={`w-full text-left p-3 rounded-lg transition ${
 
 ## 8. How Data Flows End-to-End
 
-### Example: Admin Logs In and Views Sites
+### Example: User Logs In and Views Dashboard
 
 ```
 1. User opens http://localhost:3000
    → RootLayout renders
-   → AuthProvider initialises: reads localStorage, no session found
-   → ProtectedLayout: not authenticated, redirects to /login
+   → AuthProvider initialises: calls supabase.auth.getSession()
+   → No active session found
+   → ProtectedLayout: not authenticated → redirects to /login
 
 2. User is at /login:
-   → Clicks "Admin" quick-login button
-   → handleTestLogin('admin') called
-   → login('admin@test.local', 'admin123', 'admin') called in AuthContext
-   → mockLoginUser() runs:
-     - Finds 'admin@test.local' in MOCK_USERS
-     - Password matches
-     - Role matches
-     - Creates AuthSession { user: { id, email, role: 'admin' }, token, expiresAt }
-   → saveSession(session) → localStorage
-   → router.push('/dashboard')
+   → Clicks "Warehouse Op." quick-login button
+   → handleTestLogin('warehouse@example.com', 'Passw0rd!warehouse') called
+   → login() in AuthContext calls supabase.auth.signInWithPassword()
+   → Supabase validates credentials → returns JWT + session
 
-3. User is at /dashboard:
+3. onAuthStateChange fires (inside AuthProvider useEffect):
+   → session.user.id is available
+   → fetchUserRole(userId) queries project_user_roles
+   → Finds the user has role 'warehouse' in a project
+   → mapDbRole('warehouse') → 'warehouse_operator'
+   → setUser({ id, email, role: 'warehouse_operator', created_at })
+   → isLoading → false
+
+4. ProtectedLayout detects isAuthenticated = true and pathname = '/login'
+   → Redirects to /dashboard
+
+5. User is at /dashboard:
    → ProtectedLayout: authenticated ✓ → renders NavBar + page content
-   → NavBar: shows user email "admin@test.local" with dropdown
-   → DashboardPage reads user.role = 'admin' → renders <AdminDashboard />
+   → NavBar: shows user email with dropdown, role displayed as "warehouse operator"
+   → DashboardPage reads user.role = 'warehouse_operator' → renders <WarehouseOperatorDashboard />
 
-4. AdminDashboard mounts:
-   → useEffect fires → fetchSites() called
-   → fetch('http://localhost:4000/api/sites')
-   → Express backend receives GET /api/sites
-   → supabase.from('sites').select(...) (service role, bypasses RLS)
-   → PostgreSQL returns all site rows
-   → Backend sends JSON array to frontend
-   → setSites(data) → React re-renders with site list
-
-5. User clicks on "Demo Site":
-   → handleSiteSelect('demo-site-uuid') called
-   → fetch('http://localhost:4000/api/projects?site_id=demo-site-uuid')
-   → Backend queries projects WHERE site_id = 'demo-site-uuid'
-   → setProjects(data) → projects panel updates
-
-6. User clicks on "Project A":
-   → setSelectedProjectId('project-a-uuid')
-   → Project Details panel appears with placeholder sections
+6. WarehouseOperatorDashboard mounts:
+   → useEffect fetches projects: supabase.from('projects').select(...)
+   → RLS automatically filters to only projects this user has access to
+   → setProjects(data) → React re-renders with project buttons
 ```
 
-### Example: Warehouse Operator Adds Stock (Database Level)
-
-This happens via Supabase RPC (not through the Express API yet):
+### Example: Warehouse Operator Adds Stock
 
 ```
-1. Warehouse operator is authenticated → Supabase JWT contains their user ID
+1. Warehouse operator selects a project → inventory loads automatically
 
-2. Frontend calls: supabase.rpc('add_stock', {
-     p_project_id: 'uuid',
-     p_item_id: 'uuid',
-     p_location_id: 'uuid',
-     p_quantity: 10
-   })
+2. Clicks "+ Add Stock" button:
+   → openModalWith('add') called
+   → Form state reset (item, location, quantity cleared)
+   → Add Stock modal opens
 
-3. Supabase sends the request to PostgreSQL with the user's JWT
+3. User selects an item from the dropdown (fetched from 'items' table)
+   → Location selector appears
+   → User selects a location
+   → Quantity input appears
 
-4. add_stock() function executes:
+4. User enters quantity and clicks "Add Stock":
+   → handleAddStock() called
+   → supabase.rpc('add_stock', {
+       p_project_id: selectedProject.id,
+       p_item_id: formItemId,
+       p_location_id: formLocationId,
+       p_quantity: Number(formQty),
+     })
+   → Supabase sends RPC call to PostgreSQL with the user's JWT
+
+5. add_stock() Postgres function executes (in a single transaction):
    a. Calls user_has_project_role(p_project_id, ['admin', 'warehouse'])
-      → Queries project_user_roles to check if this user has warehouse role
-      → Returns true ✓
+      → Checks project_user_roles → user has 'warehouse' role ✓
    b. Validates quantity > 0 ✓
-   c. Locks the inventory row (FOR UPDATE prevents race conditions)
-   d. If inventory row exists: UPDATE quantity = quantity + 10
-      If not: INSERT new row with quantity = 10
-   e. INSERT into stock_movements (type='IN', quantity=10, created_by=auth.uid())
+   c. Locks the inventory row (FOR UPDATE prevents concurrent modification)
+   d. If inventory row exists: UPDATE quantity = quantity + p_quantity
+      If not: INSERT new row with quantity = p_quantity
+   e. INSERT into stock_movements (type='IN', quantity=p_quantity, created_by=auth.uid())
+   f. Commits the transaction
 
-5. All steps are in one transaction: all succeed or all fail together
+6. Frontend receives success response:
+   → setOpSuccess('Stock added successfully!')
+   → refreshInventory() called → inventory table reloads with new quantities
+```
 
-6. Frontend receives success, can refresh the inventory display
+### Example: Manager Creates an Enquiry
+
+```
+1. Manager selects a project → data loads (items, locations, inventory, enquiries)
+
+2. Manager clicks "Create Enquiry":
+   → Create Enquiry modal opens
+   → Manager selects:
+     - Assign to: "Warehouse" (or "Buyer")
+     - Item: from the items list
+     - Quantity: a number
+     - Delivery location: optional
+     - Notes: optional
+
+3. Manager submits the form:
+   → handleCreateEnquiry() called
+   → supabase.rpc('create_enquiry', {
+       p_project_id: selectedProject.id,
+       p_item_id: formItemId,
+       p_quantity: Number(formQty),
+       p_delivery_location_id: formLocationId || null,
+       p_assigned_role: formAssignedRole,   // 'warehouse' or 'buyer'
+       p_notes: formNotes || null,
+     })
+
+4. create_enquiry() Postgres function:
+   a. Verifies the caller is a project member
+   b. INSERT into enquiries table with status = 'OPEN'
+   c. Returns the new enquiry ID
+
+5. Frontend receives success:
+   → refreshEnquiries() reloads the enquiries list
+   → The assigned role (warehouse operator or buyer) will now see this enquiry
+     in their "Enquiries" panel when they next view the project
 ```
 
 ---
@@ -808,26 +809,22 @@ SUPABASE_ANON_KEY=<from supabase start output>
 SUPABASE_SERVICE_ROLE_KEY=<from supabase start output>
 ```
 
-**`backend/.env`:**
+**`frontend/.env.local` (Next.js uses `.env.local`):**
+```
+NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
+```
+
+**`backend/.env` (only needed if running the deprecated Express backend):**
 ```
 SUPABASE_URL=http://localhost:54321
 SUPABASE_SERVICE_ROLE_KEY=<from supabase start output>
 PORT=4000
 ```
 
-**`frontend/.env.local` (Next.js uses `.env.local`):**
-```
-NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
-NEXT_PUBLIC_API_URL=http://localhost:4000
-```
-
-**Important:** Variables prefixed with `NEXT_PUBLIC_` are exposed to the browser. Never put secrets (like the service role key) in `NEXT_PUBLIC_` variables.
+**Important:** Variables prefixed with `NEXT_PUBLIC_` are exposed to the browser. Never put secrets (like the service role key) in `NEXT_PUBLIC_` variables. The anon key is designed to be public – its permissions are limited by RLS.
 
 **Getting your Supabase keys:** After running `supabase start`, the CLI prints the API URL, anon key, and service role key. Copy these into your `.env` files.
-
-**TypeScript and `tsconfig.json`:**
-The backend `tsconfig.json` targets `ES2020` and compiles to the `dist/` folder. The `strict: true` option enables all strict type checks. `esModuleInterop: true` allows importing CommonJS modules with `import` syntax.
 
 ---
 
@@ -882,8 +879,6 @@ npm run seed:local
 npm test
 ```
 
-The `beforeAll` setup in the test file calls `seed-local.mjs` output data (it reads the seeded project/location/item IDs) so tests work against real database state.
-
 ---
 
 ## 11. Scripts & Developer Workflow
@@ -894,9 +889,9 @@ All scripts are defined in `package.json` files.
 
 | Script | Command | Description |
 |--------|---------|-------------|
-| `npm run dev` | `concurrently "frontend:dev" "backend:dev"` | Start both servers at once |
-| `npm run frontend:dev` | `cd frontend && npm run dev` | Start only the Next.js server (port 3000) |
-| `npm run backend:dev` | `cd backend && npm run dev` | Start only the Express server (port 4000) |
+| `npm run dev` | `concurrently "frontend:dev" "backend:dev"` | Start both frontend and (deprecated) backend servers |
+| `npm run frontend:dev` | `cd frontend && npm run dev` | Start only the Next.js server (port 3000) – this is all you need |
+| `npm run backend:dev` | `cd backend && npm run dev` | Start only the Express server (port 4000) – not needed for current functionality |
 | `npm run db:reset` | `supabase db reset` | Drop and recreate the database, re-run all migrations |
 | `npm run seed:local` | `node scripts/seed-local.mjs` | Insert test users and data |
 | `npm test` | `vitest run` | Run all tests once |
@@ -908,25 +903,29 @@ All scripts are defined in `package.json` files.
 # 1. Start Supabase (runs Docker containers in the background)
 supabase start
 
-# 2. Install dependencies (only needed once)
+# 2. Install dependencies (only needed once, or after pulling new code)
 npm install
 cd frontend && npm install && cd ..
-cd backend && npm install && cd ..
 
 # 3. Set up .env files (copy examples and fill in keys from `supabase start` output)
+cp frontend/.env.example frontend/.env.local
+# Edit frontend/.env.local with your Supabase URL and anon key
 
 # 4. Reset database and load test data
 npm run db:reset
 npm run seed:local
 
-# 5. Start development servers
-npm run dev
-# → http://localhost:3000  (frontend)
-# → http://localhost:4000  (backend)
+# 5. Start the frontend development server
+npm run frontend:dev
+# → http://localhost:3000  (the app)
 # → http://localhost:54323 (Supabase Studio - visual database browser)
 
-# 6. Run tests when you change database policies
-npm test
+# 6. Log in with a test account (see login page for credentials)
+#    After running seed:local, these accounts exist:
+#    boss@example.com / Passw0rd!boss        (admin)
+#    warehouse@example.com / Passw0rd!warehouse (warehouse operator)
+#    manager@example.com / Passw0rd!manager  (manager)
+#    buyer@example.com / Passw0rd!buyer      (buyer)
 ```
 
 **`scripts/seed-local.mjs`** creates the following test data:
@@ -937,6 +936,8 @@ npm test
 - 1 item: "Cement Bag" (SKU: CEM-001)
 - Role assignments: boss=admin, warehouse=warehouse, manager=manager, buyer=buyer
 - Initial stock: 50 cement bags at Main Store
+
+> **Note:** The seed script requires a clean database. Run `npm run db:reset` before `npm run seed:local`. If you run the seed script twice without resetting, it will fail because the user accounts already exist.
 
 ---
 
@@ -999,45 +1000,34 @@ These migrations progressively fixed the recursion by:
 
 ### Step 10: Order Creation Requires Supplier (`20260226200631_update_create_order_require_supplier.sql`)
 
-- Updated `create_order` to require `p_supplier_name` as a parameter (previously, the supplier could be added later)
+- Updated `create_order` to require `p_supplier_name` as a parameter
 - Added validation: `supplier_name` cannot be empty
 - Added proper `SECURITY DEFINER` and permission grants to the function
 
-### Frontend & Backend Development
+### Frontend Development
 
-In parallel with the database work, the frontend and backend were built:
+In parallel with the database work:
 
-1. **Express backend** was scaffolded with TypeScript and all read-only API routes were implemented
-2. **Next.js frontend** was set up with the App Router
-3. **Authentication** was implemented with a mock system (using localStorage) as a placeholder for real auth
-4. **Role-based dashboards** were created for all 4 roles
-5. **ProtectedLayout** and **NavBar** were added to handle routing and navigation
-6. **AdminDashboard** was connected to the backend API to load real data
+1. **Next.js frontend** was set up with the App Router
+2. **Authentication** was implemented using real Supabase Auth (JWT-based)
+3. **Role-based dashboards** were created for all 4 roles
+4. **Inventory operations** (add/remove/transfer stock) were fully implemented in the Warehouse Operator dashboard using Supabase RPCs
+5. **Enquiry workflow** was fully implemented across all dashboards
+6. **Shared components** (Modal, OpStatus, STATUS_COLOURS) were extracted to avoid code duplication between dashboards
+7. **ProtectedLayout** and **NavBar** were added to handle routing and navigation
 
 ---
 
 ## 13. What Comes Next – The Roadmap
 
-The project's TODO list from `README.md` with explanations of what each item means:
-
 ### High Priority
 
-#### 🔐 Replace mock authentication with real backend API
-**What needs to happen:** Currently `mockLoginUser()` checks a hardcoded object. It needs to be replaced with:
-1. A `POST /api/auth/login` endpoint on the Express backend
-2. The backend calls `supabase.auth.signInWithPassword()`
-3. Returns the JWT token to the frontend
-4. The frontend stores the real Supabase JWT, not a fake one
-5. Future API calls from the frontend include the JWT in the `Authorization` header so the backend can verify who the user is
+#### 📦 Build order creation and management UI
+**Status:** Database functions (`create_order`, `add_order_item`, `update_order_status`) are complete. The "View Orders" and "Create New Order" buttons in the Buyer dashboard are present but don't open forms yet.
+**What needs to happen:** Add modals/forms for creating orders (supplier name, items, quantities, unit costs), viewing order details, and updating order status.
 
-#### 🏗️ Implement actual inventory operations
-**What needs to happen:** The warehouse dashboard buttons (Add Stock, Remove Stock, Transfer) need to call the Supabase RPCs (`add_stock`, `remove_stock`, `transfer_stock`). This requires forms to collect item, location, and quantity inputs.
-
-#### 📋 Build enquiry management UI
-**What needs to happen:** A full UI for creating enquiries (selecting item, quantity, location, target role) and viewing/updating their status. The database logic is already complete.
-
-#### 📦 Add order creation and management forms
-**What needs to happen:** Forms for the buyer to create orders (supplier name, items, quantities, costs) and update order status. The database functions exist; the UI is missing.
+#### 👤 Add user profile management
+**What needs to happen:** A settings page where users can update their name and password. The `users` table already has a `full_name` column.
 
 ### Medium Priority
 
@@ -1047,13 +1037,13 @@ The project's TODO list from `README.md` with explanations of what each item mea
 ```typescript
 supabase
   .channel('inventory-changes')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, 
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' },
     (payload) => setInventory(prev => updateInventory(prev, payload)))
   .subscribe()
 ```
 
-#### 👤 Add user profile management
-**What needs to happen:** A settings page where users can update their name and password.
+#### 🗺️ Admin: add site/project management
+Currently the admin can only **read** data. Admins should be able to create sites, projects, locations, items, and assign users to projects through the UI (the database functions already support all of this).
 
 ### Lower Priority / Future
 
@@ -1061,9 +1051,12 @@ supabase
 **What needs to happen:**
 1. Create a Supabase project on [supabase.com](https://supabase.com) (the cloud version)
 2. Run migrations against the cloud database: `supabase db push`
-3. Deploy the Next.js frontend to Vercel (or similar)
-4. Deploy the Express backend to Railway, Render, or similar
-5. Update environment variables to point to production URLs
+3. Deploy the Next.js frontend to Vercel (connect the GitHub repository – Vercel auto-deploys on push)
+4. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` as environment variables in the Vercel project settings
+5. No backend server is needed for the current feature set
+
+#### 🧹 Remove the Express backend
+The `backend/` folder is dead code. Once you're confident it's not needed, delete it and remove the `backend:dev` script from `package.json`.
 
 #### 📊 Analytics and reporting
 Future feature: dashboards showing stock trends over time, order history charts, enquiry resolution rates.
@@ -1074,34 +1067,22 @@ Future feature: dashboards showing stock trends over time, order history charts,
 
 | Term | Explanation |
 |------|-------------|
-| **API** | Application Programming Interface – a defined way for two programs to communicate. The Express backend exposes an API that the frontend uses. |
+| **API** | Application Programming Interface – a defined way for two programs to communicate. |
 | **REST API** | A style of API where resources (sites, projects) are accessed via URLs using HTTP methods (GET, POST, PUT, DELETE). |
+| **RPC (Remote Procedure Call)** | Calling a function stored in the database as if it were a regular function call. Used here for operations like `add_stock`. |
 | **HTTP** | The protocol (language) used to send data over the web. GET requests fetch data, POST sends data to create something. |
 | **JSON** | JavaScript Object Notation – a text format for data. `{ "id": "123", "name": "Demo Site" }`. |
 | **TypeScript** | JavaScript with types. Catches bugs before running. |
 | **React Component** | A JavaScript function that returns UI (HTML). Reusable building block. |
 | **React Hook** | A special function (starts with `use`) that lets you use React features like state (`useState`) and side effects (`useEffect`) inside a component. |
-| **Context (React)** | A way to share data across many components without passing it through every level of props. Used here for auth state. |
-| **Next.js** | Framework on top of React that adds routing, server-side rendering, and other features. |
-| **App Router** | Next.js routing system where the folder structure maps to URLs. |
-| **SSR / CSR** | Server-Side Rendering (page built on server) vs Client-Side Rendering (page built in the browser). `'use client'` means CSR. |
-| **Tailwind CSS** | CSS utility framework where you style with classes in the HTML instead of separate CSS files. |
-| **Node.js** | Runtime that lets you run JavaScript/TypeScript on a server (not just in a browser). |
-| **Express.js** | Minimal web framework for Node.js. Used to create the backend API. |
-| **PostgreSQL** | A powerful open-source relational database. Data is in tables with rows and columns. |
-| **Supabase** | A hosted PostgreSQL service with built-in auth, REST API, real-time subscriptions, and more. |
-| **RLS** | Row Level Security – PostgreSQL feature that filters which rows a user can access. The database enforces security, not just the application. |
-| **RPC** | Remote Procedure Call – calling a database function from outside. Used here for stock operations and order management. |
-| **Migration** | A SQL file that changes the database schema. Migrations run in order and are tracked so the database is always in sync with the code. |
-| **Foreign Key** | A column that references another table's primary key. Enforces that referenced data exists. |
-| **UUID** | Universally Unique Identifier – a long random ID like `550e8400-e29b-41d4-a716-446655440000`. Used as primary keys. |
-| **JWT** | JSON Web Token – a signed token that proves who you are. Supabase uses JWTs for session management. |
-| **Environment Variable** | A configuration value stored outside the code. Accessed via `process.env.VARIABLE_NAME`. Used for secrets. |
-| **CORS** | Cross-Origin Resource Sharing – a security feature that controls which websites can call your API. The backend uses the `cors` package to allow the frontend. |
-| **Seed Data** | Test data inserted into the database so developers can work with realistic content. |
-| **Soft Delete** | Instead of actually deleting a record, set a flag (`is_active = false`). Preserves history. Used for `items`. |
-| **Transaction** | A group of database operations that all succeed or all fail together. Prevents data inconsistency. |
-| **`SECURITY DEFINER`** | A PostgreSQL function option that makes the function run as its owner (postgres) instead of the calling user. Used to avoid RLS recursion. |
-| **Vitest** | A JavaScript testing framework. Used to run automated tests. |
-| **concurrently** | An npm package that runs multiple commands at the same time in one terminal. |
-| **dotenv** | An npm package that loads `.env` files into `process.env`. |
+| **React Context** | A way to share data (like the current user) across many components without manually passing it as props through every level. |
+| **JWT (JSON Web Token)** | A signed string that proves who you are. Supabase issues a JWT after login. The frontend sends it with every request so the database knows which user is making the request. |
+| **RLS (Row Level Security)** | A PostgreSQL feature that filters which database rows each user can see or modify. A WHERE clause applied automatically on every query. |
+| **SECURITY DEFINER** | A PostgreSQL function option that makes the function run as its owner (the superuser) instead of the calling user. Used to avoid RLS recursion bugs. |
+| **Anon Key** | A Supabase API key that any user (even unauthenticated) can use. Its permissions are strictly limited by RLS. Safe to expose in the browser. |
+| **Service Role Key** | A Supabase API key that bypasses all RLS policies (full admin access). Must never be exposed in the browser or committed to source code. |
+| **Migration** | A SQL file that makes a specific change to the database schema. Running all migrations in order recreates the database from scratch. |
+| **Seed** | Populating the database with test data to make development easier. |
+| **Soft Delete** | Marking a record as inactive (`is_active = false`) instead of actually deleting it. Preserves historical references. |
+| **Foreign Key** | A column that references the primary key of another table. Enforces that related data exists. E.g. `inventory.item_id` → `items.id`. |
+| **Transaction** | A group of database operations that all succeed or all fail together. If one step fails, all changes are rolled back. Used in `transfer_stock` to prevent partial transfers. |
