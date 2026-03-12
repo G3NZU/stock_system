@@ -14,15 +14,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// How long (ms) we wait for the initial session check before giving up and
+// showing the UI in an unauthenticated state.  8 s is generous but prevents an
+// infinite loading spinner on slow connections.
 const ROLE_PRIORITY: Record<string, number> = { admin: 4, warehouse: 3, manager: 2, buyer: 1 }
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000
+// How long (ms) we wait for the role lookup query after a session is found.
 const ROLE_FETCH_TIMEOUT_MS = 5000
 
+/**
+ * Maps the database role name to the frontend UserRole type.
+ * The DB stores 'warehouse' but the frontend uses 'warehouse_operator' for clarity.
+ */
 function mapDbRole(dbRole: string): UserRole {
   if (dbRole === 'warehouse') return 'warehouse_operator'
   return dbRole as UserRole
 }
 
+/**
+ * Wraps a promise with a timeout. Rejects with `message` if `timeoutMs` elapses
+ * before the original promise resolves or rejects.
+ */
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
@@ -38,6 +50,11 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   })
 }
 
+/**
+ * Queries `project_user_roles` to determine the user's highest-priority role.
+ * A user may have roles in multiple projects; we return the single highest one
+ * so the UI knows which dashboard to show.  Defaults to 'buyer' if no role is found.
+ */
 async function fetchUserRole(userId: string): Promise<UserRole> {
   const { data } = await supabase
     .from('project_user_roles')
@@ -68,6 +85,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     let isMounted = true
+    // Safety net: if everything else stalls, stop the loading spinner after the
+    // bootstrap timeout so the user isn't stuck forever.
     const loadingGuard = setTimeout(() => {
       if (isMounted) {
         setIsLoading(false)
@@ -100,6 +119,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           })
         }
       } catch {
+        // On any failure (timeout, network error, etc.) treat as unauthenticated.
         if (isMounted) {
           setUser(null)
         }
@@ -112,7 +132,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     void initializeSession()
 
-    // Subscribe to auth state changes
+    // Subscribe to auth state changes (e.g. token refresh, sign-out in another tab).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       try {
         if (session?.user) {
@@ -159,7 +179,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsLoading(false)
       throw error
     }
-    // user state is updated by onAuthStateChange
+    // user state is updated by the onAuthStateChange subscription above
   }
 
   const logout = () => {

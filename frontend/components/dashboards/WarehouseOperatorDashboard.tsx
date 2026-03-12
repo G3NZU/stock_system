@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { ENQUIRY_SELECT } from '@/lib/queries'
+import { Modal } from '@/components/dashboards/shared/Modal'
+import { OpStatus } from '@/components/dashboards/shared/OpStatus'
+import { STATUS_COLOURS } from '@/components/dashboards/shared/constants'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,64 +56,6 @@ interface Enquiry {
 
 /** Which modal (if any) is currently open. */
 type ModalType = 'add' | 'remove' | 'transfer' | 'locations' | 'enquiries' | 'create_enquiry' | null
-
-const STATUS_COLOURS: Record<string, string> = {
-  OPEN: 'bg-blue-100 text-blue-800',
-  IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
-  RESOLVED: 'bg-green-100 text-green-800',
-  REJECTED: 'bg-red-100 text-red-800',
-}
-
-// ─── Sub-components (defined outside to avoid re-creation on every render) ────
-
-/** Generic overlay modal wrapper. */
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string
-  onClose: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-            aria-label="Close modal"
-          >
-            ×
-          </button>
-        </div>
-        {/* Body */}
-        <div className="px-6 py-5">{children}</div>
-      </div>
-    </div>
-  )
-}
-
-/** Operation error / success feedback banner. */
-function OpStatus({ error, success }: { error: string; success: string }) {
-  return (
-    <>
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-300 text-green-700 rounded-lg text-sm">
-          {success}
-        </div>
-      )}
-    </>
-  )
-}
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 
