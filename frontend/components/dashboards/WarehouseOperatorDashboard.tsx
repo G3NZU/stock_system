@@ -132,13 +132,13 @@ export default function WarehouseOperatorDashboard() {
   const [opLoading, setOpLoading] = useState(false)
   const [opError, setOpError] = useState('')
   const [opSuccess, setOpSuccess] = useState('')
+  const [updateEnqError, setUpdateEnqError] = useState('')
 
   // ── Form state (shared across modals) ──────────────────────────────────────
   const [formItemId, setFormItemId] = useState('')
   const [formLocationId, setFormLocationId] = useState('')
   const [formToLocationId, setFormToLocationId] = useState('')
   const [formQty, setFormQty] = useState('1')
-  const [formAssignedRole, setFormAssignedRole] = useState<'warehouse' | 'buyer'>('warehouse')
   const [formNotes, setFormNotes] = useState('')
 
   // ── Fetch projects the current user has access to ───────────────────────────
@@ -202,11 +202,12 @@ export default function WarehouseOperatorDashboard() {
         .eq('items.project_id', projectId)
         .order('quantity', { ascending: false })
 
-      // Fetch enquiries for this project.
+      // Fetch enquiries assigned to warehouse for this project.
       const { data: enqData } = await supabase
         .from('enquiries')
         .select(ENQUIRY_SELECT)
         .eq('project_id', projectId)
+        .eq('assigned_role', 'warehouse')
         .order('created_at', { ascending: false })
 
       if (!mounted) return
@@ -239,6 +240,7 @@ export default function WarehouseOperatorDashboard() {
       .from('enquiries')
       .select(ENQUIRY_SELECT)
       .eq('project_id', projectId)
+      .eq('assigned_role', 'warehouse')
       .order('created_at', { ascending: false })
     setEnquiries((enqData as unknown as Enquiry[]) ?? [])
   }
@@ -249,10 +251,10 @@ export default function WarehouseOperatorDashboard() {
     setFormLocationId('')
     setFormToLocationId('')
     setFormQty('1')
-    setFormAssignedRole('warehouse')
     setFormNotes('')
     setOpError('')
     setOpSuccess('')
+    setUpdateEnqError('')
     setOpenModal(modal)
   }
 
@@ -260,6 +262,7 @@ export default function WarehouseOperatorDashboard() {
     setOpenModal(null)
     setOpError('')
     setOpSuccess('')
+    setUpdateEnqError('')
   }
 
   /**
@@ -362,7 +365,7 @@ export default function WarehouseOperatorDashboard() {
 
   // ── Enquiry operations ──────────────────────────────────────────────────────
 
-  /** Create a new enquiry – calls the `create_enquiry` RPC. */
+  /** Create a new enquiry – calls the `create_enquiry` RPC. Warehouse always assigns to buyer. */
   const handleCreateEnquiry = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedProject) return
@@ -375,7 +378,7 @@ export default function WarehouseOperatorDashboard() {
       p_item_id: formItemId,
       p_quantity: Number(formQty),
       p_delivery_location_id: formLocationId || null,
-      p_assigned_role: formAssignedRole,
+      p_assigned_role: 'buyer',
       p_notes: formNotes || null,
     })
 
@@ -390,12 +393,13 @@ export default function WarehouseOperatorDashboard() {
 
   /** Update enquiry status – calls the `update_enquiry_status` RPC. */
   const handleUpdateEnquiryStatus = async (enquiryId: string, newStatus: string) => {
+    setUpdateEnqError('')
     const { error } = await supabase.rpc('update_enquiry_status', {
       p_enquiry_id: enquiryId,
       p_status: newStatus,
     })
     if (error) {
-      console.error('Error updating enquiry status:', error.message)
+      setUpdateEnqError(error.message)
     } else if (selectedProject) {
       await refreshEnquiries(selectedProject.id)
     }
@@ -552,7 +556,7 @@ export default function WarehouseOperatorDashboard() {
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Enquiries</h2>
               <p className="text-gray-600 mb-4 text-sm">
-                {enquiries.filter((e) => e.assigned_role === 'warehouse' && e.status === 'OPEN').length} open enquiry(s) assigned to warehouse.
+                {enquiries.filter((e) => e.status === 'OPEN').length} open enquiry(s) assigned to warehouse.
               </p>
               <div className="space-y-3">
                 <button
@@ -967,13 +971,17 @@ export default function WarehouseOperatorDashboard() {
       {/* ── Enquiries list modal ── */}
       {openModal === 'enquiries' && selectedProject && (
         <Modal title={`Enquiries — ${selectedProject.name}`} onClose={closeModal}>
+          {updateEnqError && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-300 text-red-700 rounded-lg text-sm">
+              {updateEnqError}
+            </div>
+          )}
           {enquiries.length === 0 ? (
-            <p className="text-gray-500 text-sm">No enquiries for this project yet.</p>
+            <p className="text-gray-500 text-sm">No enquiries assigned to warehouse for this project yet.</p>
           ) : (
             <div className="space-y-3">
               {enquiries.map((enq) => {
-                const isMine = enq.assigned_role === 'warehouse'
-                const canUpdate = isMine && enq.status !== 'RESOLVED' && enq.status !== 'REJECTED'
+                const canUpdate = enq.status !== 'RESOLVED' && enq.status !== 'REJECTED'
                 return (
                   <div key={enq.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -988,9 +996,7 @@ export default function WarehouseOperatorDashboard() {
                           <p className="text-sm text-gray-500 italic mt-1">{enq.notes}</p>
                         )}
                         <p className="text-xs text-gray-400 mt-1">
-                          Assigned to: <span className="capitalize font-medium">{enq.assigned_role}</span>
-                          {' · '}
-                          {enq.users?.email || enq.requested_by}
+                          Requested by: {enq.users?.email || enq.requested_by}
                           {' · '}
                           {new Date(enq.created_at).toLocaleDateString()}
                         </p>
@@ -1010,12 +1016,14 @@ export default function WarehouseOperatorDashboard() {
                             In Progress
                           </button>
                         )}
-                        <button
-                          onClick={() => void handleUpdateEnquiryStatus(enq.id, 'RESOLVED')}
-                          className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 font-medium"
-                        >
-                          Resolve
-                        </button>
+                        {enq.status === 'IN_PROGRESS' && (
+                          <button
+                            onClick={() => void handleUpdateEnquiryStatus(enq.id, 'RESOLVED')}
+                            className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 font-medium"
+                          >
+                            Resolve
+                          </button>
+                        )}
                         <button
                           onClick={() => void handleUpdateEnquiryStatus(enq.id, 'REJECTED')}
                           className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium"
@@ -1040,7 +1048,7 @@ export default function WarehouseOperatorDashboard() {
 
       {/* ── Create enquiry modal ── */}
       {openModal === 'create_enquiry' && selectedProject && (
-        <Modal title="Create Enquiry" onClose={closeModal}>
+        <Modal title="Create Enquiry to Buyer" onClose={closeModal}>
           <OpStatus error={opError} success={opSuccess} />
           {opSuccess ? (
             <button
@@ -1052,24 +1060,8 @@ export default function WarehouseOperatorDashboard() {
           ) : (
             <form onSubmit={(e) => void handleCreateEnquiry(e)} className="space-y-4">
               <p className="text-sm text-gray-500">
-                Create an enquiry for stock needed, assigned to the warehouse or buyer.
+                Create an enquiry for stock you need, assigned to the buyer.
               </p>
-
-              {/* Assign to */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assign To</label>
-                <select
-                  value={formAssignedRole}
-                  onChange={(e) => setFormAssignedRole(e.target.value as 'warehouse' | 'buyer')}
-                  required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="warehouse">Warehouse</option>
-                  <option value="buyer">Buyer</option>
-                </select>
-              </div>
-
-              {/* Item */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Item</label>
                 <select

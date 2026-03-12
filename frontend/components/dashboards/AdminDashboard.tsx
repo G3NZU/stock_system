@@ -60,6 +60,7 @@ export default function AdminDashboard() {
   const [inventory, setInventory] = useState<InventoryRow[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [membersError, setMembersError] = useState('')
 
   // Fetch sites on mount
   useEffect(() => {
@@ -94,6 +95,7 @@ export default function AdminDashboard() {
     setSelectedSiteId(siteId)
     setSelectedProject(null)
     setMembers([])
+    setMembersError('')
     setInventory([])
     setLocations([])
     try {
@@ -116,12 +118,14 @@ export default function AdminDashboard() {
 
   const fetchProjectDetail = async (projectId: string) => {
     setLoadingDetail(true)
+    setMembersError('')
     try {
-      // Fetch members via RPC (SECURITY DEFINER, site-owner only)
+      // Fetch members via RPC (SECURITY DEFINER, site-owner or project-admin only)
       const { data: memberData, error: memberError } = await supabase
         .rpc('get_project_members', { p_project_id: projectId })
       if (memberError) {
         console.error('Error fetching members:', memberError.message)
+        setMembersError(memberError.message)
       } else {
         setMembers((memberData as ProjectMember[]) || [])
       }
@@ -262,7 +266,9 @@ export default function AdminDashboard() {
               {/* Members tab */}
               {activeTab === 'members' && (
                 <div className="space-y-2">
-                  {members.length === 0 ? (
+                  {membersError ? (
+                    <p className="text-red-500 text-sm">{membersError}</p>
+                  ) : members.length === 0 ? (
                     <p className="text-gray-400 text-sm">No members found.</p>
                   ) : (
                     members.map((m) => (

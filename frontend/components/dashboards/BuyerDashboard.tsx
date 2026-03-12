@@ -124,6 +124,7 @@ export default function BuyerDashboard() {
   const [opLoading, setOpLoading] = useState(false)
   const [opError, setOpError] = useState('')
   const [opSuccess, setOpSuccess] = useState('')
+  const [updateEnqError, setUpdateEnqError] = useState('')
 
   // Create enquiry form state
   const [formItemId, setFormItemId] = useState('')
@@ -183,6 +184,7 @@ export default function BuyerDashboard() {
         .from('enquiries')
         .select(ENQUIRY_SELECT)
         .eq('project_id', projectId)
+        .eq('assigned_role', 'buyer')
         .order('created_at', { ascending: false })
 
       if (!mounted) return
@@ -202,6 +204,7 @@ export default function BuyerDashboard() {
       .from('enquiries')
       .select(ENQUIRY_SELECT)
       .eq('project_id', projectId)
+      .eq('assigned_role', 'buyer')
       .order('created_at', { ascending: false })
     setEnquiries((enqData as unknown as Enquiry[]) ?? [])
   }
@@ -213,6 +216,7 @@ export default function BuyerDashboard() {
     setFormNotes('')
     setOpError('')
     setOpSuccess('')
+    setUpdateEnqError('')
     setOpenModal(modal)
   }
 
@@ -220,6 +224,7 @@ export default function BuyerDashboard() {
     setOpenModal(null)
     setOpError('')
     setOpSuccess('')
+    setUpdateEnqError('')
   }
 
   const handleCreateEnquiry = async (e: React.FormEvent) => {
@@ -248,20 +253,19 @@ export default function BuyerDashboard() {
   }
 
   const handleUpdateStatus = async (enquiryId: string, newStatus: string) => {
+    setUpdateEnqError('')
     const { error } = await supabase.rpc('update_enquiry_status', {
       p_enquiry_id: enquiryId,
       p_status: newStatus,
     })
     if (error) {
-      console.error('Error updating enquiry status:', error.message)
+      setUpdateEnqError(error.message)
     } else if (selectedProject) {
       await refreshEnquiries(selectedProject.id)
     }
   }
 
-  // Enquiries assigned to buyer (for the buyer to action)
-  const receivedEnquiries = enquiries.filter((e) => e.assigned_role === 'buyer')
-  const allEnquiries = enquiries
+  // All fetched enquiries are already buyer-assigned (filtered at query time)
 
   return (
     <div className="space-y-6">
@@ -349,7 +353,7 @@ export default function BuyerDashboard() {
             <p className="text-gray-600 mb-4 text-sm">
               {loadingData
                 ? 'Loading…'
-                : `${receivedEnquiries.filter((e) => e.status === 'OPEN').length} open enquiry(s) assigned to you`}
+                : `${enquiries.filter((e) => e.status === 'OPEN').length} open enquiry(s) assigned to you`}
             </p>
             <div className="space-y-3">
               <button
@@ -357,7 +361,7 @@ export default function BuyerDashboard() {
                 disabled={loadingData}
                 className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50 transition"
               >
-                View All Enquiries ({allEnquiries.length})
+                View Enquiries ({enquiries.length})
               </button>
               <button
                 onClick={() => openModalWith('create_enquiry')}
@@ -482,13 +486,17 @@ export default function BuyerDashboard() {
       {/* ── Enquiries list modal ── */}
       {openModal === 'enquiries' && selectedProject && (
         <Modal title={`Enquiries — ${selectedProject.name}`} onClose={closeModal}>
-          {allEnquiries.length === 0 ? (
-            <p className="text-gray-500 text-sm">No enquiries for this project yet.</p>
+          {updateEnqError && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-300 text-red-700 rounded-lg text-sm">
+              {updateEnqError}
+            </div>
+          )}
+          {enquiries.length === 0 ? (
+            <p className="text-gray-500 text-sm">No enquiries assigned to you for this project yet.</p>
           ) : (
             <div className="space-y-3">
-              {allEnquiries.map((enq) => {
-                const isMine = enq.assigned_role === 'buyer'
-                const canUpdate = isMine && enq.status !== 'RESOLVED' && enq.status !== 'REJECTED'
+              {enquiries.map((enq) => {
+                const canUpdate = enq.status !== 'RESOLVED' && enq.status !== 'REJECTED'
                 return (
                   <div key={enq.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -503,9 +511,7 @@ export default function BuyerDashboard() {
                           <p className="text-sm text-gray-500 italic mt-1">{enq.notes}</p>
                         )}
                         <p className="text-xs text-gray-400 mt-1">
-                          Assigned to: <span className="capitalize font-medium">{enq.assigned_role}</span>
-                          {' · '}
-                          {enq.users?.email || enq.requested_by}
+                          Requested by: {enq.users?.email || enq.requested_by}
                           {' · '}
                           {new Date(enq.created_at).toLocaleDateString()}
                         </p>
@@ -514,7 +520,7 @@ export default function BuyerDashboard() {
                         {enq.status}
                       </span>
                     </div>
-                    {/* Status update buttons for buyer-assigned enquiries */}
+                    {/* Status update buttons */}
                     {canUpdate && (
                       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
                         <span className="text-xs text-gray-500 self-center">Update status:</span>
@@ -526,12 +532,14 @@ export default function BuyerDashboard() {
                             In Progress
                           </button>
                         )}
-                        <button
-                          onClick={() => void handleUpdateStatus(enq.id, 'RESOLVED')}
-                          className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 font-medium"
-                        >
-                          Resolve
-                        </button>
+                        {enq.status === 'IN_PROGRESS' && (
+                          <button
+                            onClick={() => void handleUpdateStatus(enq.id, 'RESOLVED')}
+                            className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 font-medium"
+                          >
+                            Resolve
+                          </button>
+                        )}
                         <button
                           onClick={() => void handleUpdateStatus(enq.id, 'REJECTED')}
                           className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 font-medium"
